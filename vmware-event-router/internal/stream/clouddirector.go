@@ -3,10 +3,10 @@ package stream
 import (
 	"context"
 	"log"
-	//"net/url"
 	"net/http"
 	"os"
 	"encoding/json"
+	"crypto/tls"
 
 	"github.com/pkg/errors"
 	"github.com/vmware-samples/vcenter-event-broker-appliance/vmware-event-router/internal/color"
@@ -29,19 +29,11 @@ type cloudDirectorStream struct {
 	verbose bool
 }
 
-type CloudDirectorConnectionConfig struct {
-	User     string
-	Password string
-	Org      string
-	Href     string
-	VDC      string
-	Insecure bool
-}
 
 // NewCloudDirectorStream returns a Cloud Director event manager for a given configuration
 func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...CloudDirectorOption) (Streamer, error) {
 	var cloudDirector cloudDirectorStream
-	logger := log.New(os.Stdout, color.Magenta("[CloudDirector] "), log.LstdFlags)
+	logger := log.New(os.Stdout, color.Magenta("[VMware Cloud Director] "), log.LstdFlags)
 	cloudDirector.Logger = logger
 	cloudDirectorUrl := cfg.Address
 	// apply options
@@ -58,32 +50,46 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 		return nil, errors.Errorf("unsupported authentication method for stream CloudDirector: %s", cfg.Auth.Method)
 	}
 
-	var insecure bool
 	if cfg.Options["insecure"] == "true" {
-		insecure = true
-	}
-	
-	// TODO implement VCD api calls to get audit events
-	cloudDirectorConnectionConfig := CloudDirectorConnectionConfig{
-		User: username,
-		Password: password,
-		Org : "T3",
-		Href: cloudDirectorUrl,
-		Insecure: insecure,
+		customTransport := http.DefaultTransport.(*http.Transport).Clone()
+		customTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
-	request, err := http.NewRequest("GET", cloudDirectorConnectionConfig.Href + "/cloudapi/1.0.0/auditTrail", nil)
+
+	// Authenticating to Cloud Director
+	authRequest, err := http.NewRequest("POST",cloudDirectorUrl + "/api/sessions", nil)
+	authRequest.Header.Set("Accept", "application/*+xml;version=34.0")
+	authRequest.SetBasicAuth(username, password)
+	cloudDirector.Logger.Println("Authenticating to Cloud Director", cloudDirectorUrl)
+	authResponse, err := http.DefaultClient.Do(authRequest)
+	if err != nil {
+		errors.Wrap(err, "Error authenticating ")
+	}	
+	if authResponse.StatusCode != http.StatusOK {
+		errors.Errorf("Error authenticating: %s", authResponse.Status)
+	}
+	cloudDirector.Logger.Println("Authentication Response: " + authResponse.Status)
+	authToken := authResponse.Header.Get("X-VMWARE-VCLOUD-ACCESS-TOKEN")
+	var bearer = "Bearer " + authToken
+
+	// TODO create a loop to poll events (time based, with filter?)
+	// TODO check bearer token expiration
+	cloudDirector.Logger.Println("Get Cloud Director events...")
+	request, err := http.NewRequest("GET", cloudDirectorUrl + "/cloudapi/1.0.0/auditTrail", nil)
 	request.Header.Set("Accept", "application/json;version=34.0")
-	request.Header.Set("Bearer", "blah")
+	request.Header.Set("Authorization", bearer)
 	audit, err := http.DefaultClient.Do(request)
 	if err != nil {
 		errors.Wrap(err, "Error getting auditTrail")
 	}
+	defer audit.Body.Close()
+	cloudDirector.Logger.Println("Response status: ", audit.Status)
 
 	var result map[string]interface{}
 	json.NewDecoder(audit.Body).Decode(&result)
+	//cloudDirector.Logger.Println(result)
 	totalEvents := result["resultTotal"]
-	cloudDirector.Logger.Println("Total Events: %d", totalEvents)
+	cloudDirector.Logger.Println("Total Events: ", totalEvents)
 
 
 	return &cloudDirector, nil
