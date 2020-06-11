@@ -94,6 +94,13 @@ func main() {
 				if err != nil {
 					logger.Fatalf("could not connect to vCenter: %v", err)
 				}
+			case stream.ProviderCloudDirector: 
+				logger.Printf("connecting to Cloud Director %s", cfg.Address)
+				streamer, err = stream.NewCloudDirectorStream(ctx, cfg, metricsServer, stream.WithCloudDirectorVerbose(verbose))
+				if err != nil {
+					logger.Fatalf("cloud not connect to Cloud Director: %v", err)
+				}
+			
 
 			default:
 				logger.Fatalf("unsupported stream provider: %s", cfg.Provider)

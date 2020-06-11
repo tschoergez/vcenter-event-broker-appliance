@@ -13,7 +13,7 @@ type Configs []Config
 // services of the VMware Event Router (e.g. metrics)
 type Config struct {
 	Type     string            `json:"type,omitempty"`     // "stream", "processor"
-	Provider string            `json:"provider,omitempty"` // "vmware_vcenter", "openfaas", "aws_event_bridge"
+	Provider string            `json:"provider,omitempty"` // "vmware_vcenter", "openfaas", "aws_event_bridge", "vmware_clouddirector"
 	Address  string            `json:"address,omitempty"`
 	Auth     Authentication    `json:"auth,omitempty"`
 	Options  map[string]string `json:"options,omitempty"`
