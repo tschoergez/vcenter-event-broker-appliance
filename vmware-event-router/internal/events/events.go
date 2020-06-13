@@ -16,6 +16,38 @@ const (
 	eventContentType   = cloudevents.ApplicationJSON
 )
 
+// CloudDirectorEvent defines the events returned by Cloud Director auditTrail API
+type CloudDirectorEvent struct {
+	EventID      string `json:"eventId"`
+	Description  string `json:"description"`
+	OperatingOrg struct {
+		Name string `json:"name"`
+		ID   string `json:"id"`
+	} `json:"operatingOrg"`
+	User struct {
+		Name string `json:"name"`
+		ID   string `json:"id"`
+	} `json:"user"`
+	EventEntity struct {
+		Name string `json:"name"`
+		ID   string `json:"id"`
+	} `json:"eventEntity"`
+	TaskID               string `json:"taskId"`
+	TaskCellID           string `json:"taskCellId"`
+	CellID               string `json:"cellId"`
+	EventType            string `json:"eventType"`
+	ServiceNamespace     string `json:"serviceNamespace"`
+	EventStatus          string `json:"eventStatus"`
+	Timestamp            string `json:"timestamp"`
+	External             bool   `json:"external"`
+	AdditionalProperties struct {
+		UserRoles                         string `json:"user.roles"`
+		UserSessionID                     string `json:"user.session.id"`
+		CurrentContextUserProxyAddress    string `json:"currentContext.user.proxyAddress"`
+		CurrentContextUserClientIPAddress string `json:"currentContext.user.clientIpAddress"`
+	} `json:"additionalProperties"`
+}
+
 // VCenterEventInfo contains the name and category of an event received from vCenter
 // supported event categories: event, eventex, extendedevent
 // category to name convention:
@@ -78,6 +110,39 @@ func NewCloudEvent(event types.BaseEvent, source string) (*cloudevents.Event, er
 	// set data - Event payload as received from processor (includes event
 	// creation timestamp, e.g. as set by vcenter).
 	err = ce.SetData(eventContentType, event)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not create CloudEvent")
+	}
+
+	if err = ce.Validate(); err != nil {
+		return nil, errors.Wrap(err, "validation for CloudEvent failed")
+	}
+
+	return &ce, nil
+}
+
+// NewCloudEventFromCloudDirector returns a compliant CloudEvent
+func NewCloudEventFromCloudDirector(event CloudDirectorEvent, source string) (*cloudevents.Event, error) {
+	ce := cloudevents.NewEvent(eventSpecVersion)
+
+	// set ID of the event; must be non-empty and unique within the scope of the producer.
+	ce.SetID(uuid.New().String())
+
+	// set source - URI of the event producer, e.g. http(s)://vcenter.domain.ext/sdk.
+	ce.SetSource(source)
+
+	// set type - canonicalType + vcenter event category (event, eventex, extendedevent).
+	ce.SetType(eventCanonicalType + "/" + "cloudDirectorAuditEvent")
+
+	// set subject - vcenter event name used for topic subscriptions
+	ce.SetSubject(event.EventType)
+
+	// set time - Timestamp set by this event router when this message was created.
+	ce.SetTime(time.Now().UTC())
+
+	// set data - Event payload as received from processor (includes event
+	// creation timestamp, e.g. as set by vcenter).
+	err := ce.SetData(eventContentType, event)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not create CloudEvent")
 	}
