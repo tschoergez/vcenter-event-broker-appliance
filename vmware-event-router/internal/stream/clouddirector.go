@@ -7,7 +7,10 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/vmware-samples/vcenter-event-broker-appliance/vmware-event-router/internal/color"
@@ -30,7 +33,9 @@ type cloudDirectorStream struct {
 	bearer           string
 	cloudDirectorURL string
 	*log.Logger
-	verbose bool
+	verbose  bool
+	pageSize int
+	interval int
 }
 
 type auditTrail struct {
@@ -49,6 +54,8 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 	logger := log.New(os.Stdout, color.Magenta("[VMware Cloud Director] "), log.LstdFlags)
 	cloudDirector.Logger = logger
 	cloudDirector.cloudDirectorURL = cfg.Address
+	cloudDirector.pageSize = 10
+	cloudDirector.interval = 30
 	// apply options
 	for _, opt := range opts {
 		opt(&cloudDirector)
@@ -70,7 +77,7 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 
 	// Authenticating to Cloud Director
 	authRequest, err := http.NewRequest("POST", cloudDirector.cloudDirectorURL+"/api/sessions", nil)
-	authRequest.Header.Set("Accept", "application/*+xml;version=34.0")
+	authRequest.Header.Set("Accept", "application/*+xml;version=33.0")
 	authRequest.SetBasicAuth(username, password)
 	cloudDirector.Logger.Println("Authenticating to Cloud Director", cloudDirector.cloudDirectorURL)
 	authResponse, err := http.DefaultClient.Do(authRequest)
@@ -88,16 +95,63 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 	return &cloudDirector, nil
 }
 
+// Stream polls the CloudDirector auditTrail API endlessly
 func (cloudDirector *cloudDirectorStream) Stream(ctx context.Context, p processor.Processor) error {
-	cloudDirector.Logger.Println("Get Cloud Director events...")
+	loc, _ := time.LoadLocation("UTC")
+	end := time.Now().In(loc)
+	start := end.Add(time.Second * time.Duration(-cloudDirector.interval))
+	for {
+		page := 1
+		pageCount, err := cloudDirector.getAuditTrail(start, end, page, p)
+		if err != nil {
+			cloudDirector.Logger.Printf(err.Error())
+		}
+		page++
+		for ; page <= pageCount; page++ {
+			_, err := cloudDirector.getAuditTrail(start, end, page, p)
+			if err != nil {
+				cloudDirector.Logger.Printf(err.Error())
+			}
+		}
+		// set boundaries for next poll
+		start = end
+		time.Sleep(time.Second * time.Duration(cloudDirector.interval))
+		end = time.Now().In(loc)
+	}
+}
+
+// fetches auditTrail events from Cloud Director filtered by start and end time and a given page number
+// processes them for the given processor
+// returns the pageCount of response
+func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end time.Time, page int, p processor.Processor) (int, error) {
+	timestampFormat := "2006-01-02T15:04:05.000Z"
+	startString := start.Format(timestampFormat)
+	endString := end.Format(timestampFormat)
+
+	timeFilter := "(timestamp=gt=" + startString + ";timestamp=le=" + endString + ")"
+	cloudDirector.Logger.Printf("Get Cloud Director events from %v to %v", startString, endString)
+
 	request, err := http.NewRequest("GET", cloudDirector.cloudDirectorURL+"/cloudapi/1.0.0/auditTrail", nil)
-	request.Header.Set("Accept", "application/json;version=34.0")
+	request.Header.Set("Accept", "application/json;version=33.0")
 	request.Header.Set("Authorization", cloudDirector.bearer)
+	q := url.Values{}
+	q.Add("page", strconv.Itoa(page))
+	q.Add("pageSize", strconv.Itoa(cloudDirector.pageSize))
+	q.Add("sortASC", "timestamp")
+	q.Add("filter", timeFilter)
+	request.URL.RawQuery = q.Encode()
+	cloudDirector.Logger.Println(request.URL.String())
+
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		errors.Wrap(err, "Error getting auditTrail")
 	}
 	cloudDirector.Logger.Println("Response status: ", response.Status)
+	statusOK := response.StatusCode >= 200 && response.StatusCode < 300
+	if !statusOK {
+		err = errors.Errorf("Non-OK HTTP status: %v", response.StatusCode)
+		return 0, err
+	}
 
 	var auditTrail auditTrail
 	b, err := ioutil.ReadAll(response.Body)
@@ -109,20 +163,31 @@ func (cloudDirector *cloudDirectorStream) Stream(ctx context.Context, p processo
 		errors.Wrap(err, "Error parsing response body")
 	}
 	response.Body.Close()
+
 	totalEvents := auditTrail.ResultTotal
+	pageCount := auditTrail.PageCount
 	cloudDirector.Logger.Println("Total Events: ", totalEvents)
-	var event = auditTrail.Values[0]
-	cloudDirector.Logger.Println(event)
-	ce, err := events.NewCloudEventFromCloudDirector(event, cloudDirector.cloudDirectorURL)
-	if err != nil {
-		cloudDirector.Logger.Printf("skipping event %v because it coud not be converted to CloudEvent: %v", event, err)
+	cloudDirector.Logger.Println("PageCount: ", pageCount)
+
+	if totalEvents <= 0 {
+		return 0, nil
 	}
 
-	err = p.Process(*ce)
-	if err != nil {
-		cloudDirector.Logger.Printf("could not proccess event %v: %v", ce, err)
+	// loop through events
+	for idx := range auditTrail.Values {
+		var event = auditTrail.Values[idx]
+		cloudDirector.Logger.Println(event)
+		ce, err := events.NewCloudEventFromCloudDirector(event, cloudDirector.cloudDirectorURL)
+		if err != nil {
+			cloudDirector.Logger.Printf("skipping event %v because it coud not be converted to CloudEvent: %v", event, err)
+		}
+
+		err = p.Process(*ce)
+		if err != nil {
+			cloudDirector.Logger.Printf("could not proccess event %v: %v", ce, err)
+		}
 	}
-	return nil
+	return pageCount, nil
 }
 
 func (cloudDirector *cloudDirectorStream) Shutdown(ctx context.Context) error {
