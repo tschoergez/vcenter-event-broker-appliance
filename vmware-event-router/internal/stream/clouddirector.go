@@ -42,7 +42,8 @@ type auditTrail struct {
 	Values       []events.CloudDirectorEvent
 }
 
-// NewCloudDirectorStream returns a Cloud Director event manager for a given configuration
+// NewCloudDirectorStream returns a Cloud Director Connection for a given configuration
+// It connects to Cloud Director to authenticate, and stores the Bearer token for subsequent calls
 func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...CloudDirectorOption) (Streamer, error) {
 	var cloudDirector cloudDirectorStream
 	logger := log.New(os.Stdout, color.Magenta("[VMware Cloud Director] "), log.LstdFlags)
@@ -88,8 +89,6 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 }
 
 func (cloudDirector *cloudDirectorStream) Stream(ctx context.Context, p processor.Processor) error {
-	// TODO create a loop to poll events (time based, with filter?)
-	// TODO check bearer token expiration
 	cloudDirector.Logger.Println("Get Cloud Director events...")
 	request, err := http.NewRequest("GET", cloudDirector.cloudDirectorURL+"/cloudapi/1.0.0/auditTrail", nil)
 	request.Header.Set("Accept", "application/json;version=34.0")
