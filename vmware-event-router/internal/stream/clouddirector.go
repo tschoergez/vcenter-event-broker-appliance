@@ -33,9 +33,10 @@ type cloudDirectorStream struct {
 	bearer           string
 	cloudDirectorURL string
 	*log.Logger
-	verbose  bool
-	pageSize int
-	interval int
+	verbose         bool
+	pageSize        int
+	interval        int
+	timestampFormat string
 }
 
 type auditTrail struct {
@@ -56,6 +57,7 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 	cloudDirector.cloudDirectorURL = cfg.Address
 	cloudDirector.pageSize = 10
 	cloudDirector.interval = 30
+	cloudDirector.timestampFormat = "2006-01-02T15:04:05.000Z0700"
 	// apply options
 	for _, opt := range opts {
 		opt(&cloudDirector)
@@ -98,47 +100,41 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 // Stream polls the CloudDirector auditTrail API endlessly
 func (cloudDirector *cloudDirectorStream) Stream(ctx context.Context, p processor.Processor) error {
 	loc, _ := time.LoadLocation("UTC")
-	end := time.Now().In(loc)
-	start := end.Add(time.Second * time.Duration(-cloudDirector.interval))
+	end := time.Time{}
+	//start := end.Add(time.Second * time.Duration(-cloudDirector.interval))
+	start, err := cloudDirector.getNewestEventTime()
+	if err != nil {
+		start = time.Now().In(loc)
+	}
 	for {
+		end = time.Now().In(loc)
 		page := 1
-		pageCount, err := cloudDirector.getAuditTrail(start, end, page, p)
+		pageCount, lastEventTime, err := cloudDirector.getAuditTrail(start, end, page, p)
 		if err != nil {
 			cloudDirector.Logger.Printf(err.Error())
 		}
 		page++
 		for ; page <= pageCount; page++ {
-			_, err := cloudDirector.getAuditTrail(start, end, page, p)
+			_, reallyLastEventTime, err := cloudDirector.getAuditTrail(start, end, page, p)
 			if err != nil {
 				cloudDirector.Logger.Printf(err.Error())
 			}
+			lastEventTime = reallyLastEventTime
 		}
 		// set boundaries for next poll
-		start = end
+		start = lastEventTime
 		time.Sleep(time.Second * time.Duration(cloudDirector.interval))
-		end = time.Now().In(loc)
 	}
 }
 
-// fetches auditTrail events from Cloud Director filtered by start and end time and a given page number
-// processes them for the given processor
-// returns the pageCount of response
-func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end time.Time, page int, p processor.Processor) (int, error) {
-	timestampFormat := "2006-01-02T15:04:05.000Z"
-	startString := start.Format(timestampFormat)
-	endString := end.Format(timestampFormat)
-
-	timeFilter := "(timestamp=gt=" + startString + ";timestamp=le=" + endString + ")"
-	cloudDirector.Logger.Printf("Get Cloud Director events from %v to %v", startString, endString)
-
+// gets the newest event's timestamp
+func (cloudDirector *cloudDirectorStream) getNewestEventTime() (time.Time, error) {
 	request, err := http.NewRequest("GET", cloudDirector.cloudDirectorURL+"/cloudapi/1.0.0/auditTrail", nil)
 	request.Header.Set("Accept", "application/json;version=33.0")
 	request.Header.Set("Authorization", cloudDirector.bearer)
 	q := url.Values{}
-	q.Add("page", strconv.Itoa(page))
-	q.Add("pageSize", strconv.Itoa(cloudDirector.pageSize))
-	q.Add("sortASC", "timestamp")
-	q.Add("filter", timeFilter)
+	q.Add("pageSize", strconv.Itoa(1))
+	q.Add("sortDesc", "timestamp")
 	request.URL.RawQuery = q.Encode()
 	cloudDirector.Logger.Println(request.URL.String())
 
@@ -150,7 +146,7 @@ func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end tim
 	statusOK := response.StatusCode >= 200 && response.StatusCode < 300
 	if !statusOK {
 		err = errors.Errorf("Non-OK HTTP status: %v", response.StatusCode)
-		return 0, err
+		return time.Time{}, err
 	}
 
 	var auditTrail auditTrail
@@ -170,13 +166,86 @@ func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end tim
 	cloudDirector.Logger.Println("PageCount: ", pageCount)
 
 	if totalEvents <= 0 {
-		return 0, nil
+		return time.Time{}, nil
 	}
 
 	// loop through events
+	var lastEventTimestamp string
 	for idx := range auditTrail.Values {
 		var event = auditTrail.Values[idx]
 		cloudDirector.Logger.Println(event)
+		lastEventTimestamp = event.Timestamp
+	}
+	lastEventTime, err := time.Parse(cloudDirector.timestampFormat, lastEventTimestamp)
+	if err != nil {
+		cloudDirector.Logger.Printf("could not parse event timestamp %v: %v", lastEventTimestamp, err)
+	}
+	return lastEventTime, err
+}
+
+// fetches auditTrail events from Cloud Director filtered by start and end time and a given page number
+// processes them for the given processor
+// returns the pageCount of response
+func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end time.Time, page int, p processor.Processor) (int, time.Time, error) {
+
+	startString := start.Format(cloudDirector.timestampFormat)
+	var timeFilter string
+	if end.IsZero() {
+		timeFilter = "(timestamp=gt=" + startString + ")"
+	} else {
+		endString := end.Format(cloudDirector.timestampFormat)
+		timeFilter = "(timestamp=gt=" + startString + ";timestamp=le=" + endString + ")"
+	}
+	cloudDirector.Logger.Printf("Get Cloud Director events with filter %v ", timeFilter)
+
+	request, err := http.NewRequest("GET", cloudDirector.cloudDirectorURL+"/cloudapi/1.0.0/auditTrail", nil)
+	request.Header.Set("Accept", "application/json;version=33.0")
+	request.Header.Set("Authorization", cloudDirector.bearer)
+	q := url.Values{}
+	q.Add("page", strconv.Itoa(page))
+	q.Add("pageSize", strconv.Itoa(cloudDirector.pageSize))
+	q.Add("sortAsc", "timestamp")
+	q.Add("filter", timeFilter)
+	request.URL.RawQuery = q.Encode()
+	cloudDirector.Logger.Println(request.URL.String())
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		errors.Wrap(err, "Error getting auditTrail")
+	}
+	cloudDirector.Logger.Println("Response status: ", response.Status)
+	statusOK := response.StatusCode >= 200 && response.StatusCode < 300
+	if !statusOK {
+		err = errors.Errorf("Non-OK HTTP status: %v", response.StatusCode)
+		return 0, start, err
+	}
+
+	var auditTrail auditTrail
+	b, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		errors.Wrap(err, "Error reading response body")
+	}
+	err = json.Unmarshal(b, &auditTrail)
+	if err != nil {
+		errors.Wrap(err, "Error parsing response body")
+	}
+	response.Body.Close()
+
+	totalEvents := auditTrail.ResultTotal
+	pageCount := auditTrail.PageCount
+	cloudDirector.Logger.Println("Total Events: ", totalEvents)
+	cloudDirector.Logger.Println("PageCount: ", pageCount)
+
+	if totalEvents <= 0 {
+		return 0, start, nil
+	}
+
+	// loop through events
+	var lastEventTimestamp string
+	for idx := range auditTrail.Values {
+		var event = auditTrail.Values[idx]
+		cloudDirector.Logger.Println(event)
+		lastEventTimestamp = event.Timestamp
 		ce, err := events.NewCloudEventFromCloudDirector(event, cloudDirector.cloudDirectorURL)
 		if err != nil {
 			cloudDirector.Logger.Printf("skipping event %v because it coud not be converted to CloudEvent: %v", event, err)
@@ -187,7 +256,12 @@ func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end tim
 			cloudDirector.Logger.Printf("could not proccess event %v: %v", ce, err)
 		}
 	}
-	return pageCount, nil
+	lastEventTime, err := time.Parse(cloudDirector.timestampFormat, lastEventTimestamp)
+	if err != nil {
+		cloudDirector.Logger.Printf("could not parse event timestamp %v: %v", lastEventTimestamp, err)
+		lastEventTime = start
+	}
+	return pageCount, lastEventTime, nil
 }
 
 func (cloudDirector *cloudDirectorStream) Shutdown(ctx context.Context) error {
