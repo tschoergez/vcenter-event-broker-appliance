@@ -73,8 +73,7 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 	}
 
 	if cfg.Options["insecure"] == "true" {
-		customTransport := http.DefaultTransport.(*http.Transport).Clone()
-		customTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
 	// Authenticating to Cloud Director
