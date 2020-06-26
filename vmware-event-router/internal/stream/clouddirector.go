@@ -56,7 +56,7 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 	cloudDirector.Logger = logger
 	cloudDirector.cloudDirectorURL = cfg.Address
 	cloudDirector.pageSize = 10
-	cloudDirector.interval = 30
+	cloudDirector.interval = 5
 	cloudDirector.timestampFormat = "2006-01-02T15:04:05.000Z0700"
 	// apply options
 	for _, opt := range opts {
