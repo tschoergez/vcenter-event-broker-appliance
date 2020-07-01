@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -37,6 +39,9 @@ type cloudDirectorStream struct {
 	pageSize        int
 	interval        int
 	timestampFormat string
+
+	lock  sync.RWMutex
+	stats metrics.EventStats
 }
 
 type auditTrail struct {
@@ -50,7 +55,7 @@ type auditTrail struct {
 
 // NewCloudDirectorStream returns a Cloud Director Connection for a given configuration
 // It connects to Cloud Director to authenticate, and stores the Bearer token for subsequent calls
-func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...CloudDirectorOption) (Streamer, error) {
+func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, ms metrics.Receiver, opts ...CloudDirectorOption) (Streamer, error) {
 	var cloudDirector cloudDirectorStream
 	logger := log.New(os.Stdout, color.Magenta("[VMware Cloud Director] "), log.LstdFlags)
 	cloudDirector.Logger = logger
@@ -93,6 +98,17 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 	cloudDirector.bearer = "Bearer " + authToken
 	cloudDirector.Logger.Println("Authentication to Cloud Director " + cloudDirector.cloudDirectorURL + " successful")
 
+	//prepopulate the metrics stats
+	cloudDirector.stats = metrics.EventStats{
+		Provider:     ProviderCloudDirector,
+		ProviderType: cfg.Type,
+		Name:         cloudDirector.cloudDirectorURL,
+		Started:      time.Now().UTC(),
+		EventsTotal:  new(int),
+		EventsErr:    new(int),
+		EventsSec:    new(float64),
+	}
+	go cloudDirector.PushMetrics(ctx, ms)
 	return &cloudDirector, nil
 }
 
@@ -186,6 +202,17 @@ func (cloudDirector *cloudDirectorStream) getNewestEventTime() (time.Time, error
 // processes them for the given processor
 // returns the pageCount of response
 func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end time.Time, page int, p processor.Processor) (int, time.Time, error) {
+	var errCount int
+	var eventCount int
+	//update stats
+	defer func() {
+		cloudDirector.lock.Lock()
+		total := *cloudDirector.stats.EventsTotal + eventCount
+		cloudDirector.stats.EventsTotal = &total
+		errTotal := *cloudDirector.stats.EventsErr + errCount
+		cloudDirector.stats.EventsErr = &errTotal
+		cloudDirector.lock.Unlock()
+	}()
 
 	startString := start.Format(cloudDirector.timestampFormat)
 	var timeFilter string
@@ -211,11 +238,13 @@ func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end tim
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		errors.Wrap(err, "Error getting auditTrail")
+		errCount++
 	}
 	cloudDirector.Logger.Println("Response status: ", response.Status)
 	statusOK := response.StatusCode >= 200 && response.StatusCode < 300
 	if !statusOK {
 		err = errors.Errorf("Non-OK HTTP status: %v", response.StatusCode)
+		errCount++
 		return 0, start, err
 	}
 
@@ -227,6 +256,7 @@ func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end tim
 	err = json.Unmarshal(b, &auditTrail)
 	if err != nil {
 		errors.Wrap(err, "Error parsing response body")
+		errCount++
 	}
 	response.Body.Close()
 
@@ -242,17 +272,21 @@ func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end tim
 	// loop through events
 	var lastEventTimestamp string
 	for idx := range auditTrail.Values {
+		eventCount++
 		var event = auditTrail.Values[idx]
 		cloudDirector.Logger.Println(event)
 		lastEventTimestamp = event.Timestamp
 		ce, err := events.NewCloudEventFromCloudDirector(event, cloudDirector.cloudDirectorURL)
 		if err != nil {
 			cloudDirector.Logger.Printf("skipping event %v because it coud not be converted to CloudEvent: %v", event, err)
+			errCount++
+			continue
 		}
 
 		err = p.Process(*ce)
 		if err != nil {
 			cloudDirector.Logger.Printf("could not proccess event %v: %v", ce, err)
+			errCount++
 		}
 	}
 	lastEventTime, err := time.Parse(cloudDirector.timestampFormat, lastEventTimestamp)
@@ -268,4 +302,18 @@ func (cloudDirector *cloudDirectorStream) Shutdown(ctx context.Context) error {
 }
 
 func (cloudDirector *cloudDirectorStream) PushMetrics(ctx context.Context, ms metrics.Receiver) {
+	ticker := time.NewTicker(metrics.PushInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cloudDirector.lock.RLock()
+			eventsSec := math.Round((float64(*cloudDirector.stats.EventsTotal)/time.Since(cloudDirector.stats.Started).Seconds())*100) / 100 // 0.2f syntax
+			cloudDirector.stats.EventsSec = &eventsSec
+			ms.Receive(cloudDirector.stats)
+			cloudDirector.lock.RUnlock()
+		}
+	}
 }
