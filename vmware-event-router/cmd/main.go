@@ -96,7 +96,7 @@ func main() {
 				}
 			case stream.ProviderCloudDirector:
 				logger.Printf("connecting to Cloud Director %s", cfg.Address)
-				streamer, err = stream.NewCloudDirectorStream(ctx, cfg, stream.WithCloudDirectorVerbose(verbose))
+				streamer, err = stream.NewCloudDirectorStream(ctx, cfg, metricsServer, stream.WithCloudDirectorVerbose(verbose))
 				if err != nil {
 					logger.Fatalf("could not connect to Cloud Director: %v", err)
 				}
