@@ -33,8 +33,8 @@ if [ "${EVENT_PROCESSOR_TYPE}" == "AWS EventBridge" ]; then
     cat > ${EVENT_ROUTER_CONFIG} << __AWS_EVENTBRIDGE_PROCESSOR__
 [{
 		"type": "stream",
-		"provider": "vmware_vcenter",
-		"address": "https://${ESCAPED_VCENTER_SERVER}/sdk",
+		"provider": "vmware_clouddirector",
+		"address": "https://${ESCAPED_VCENTER_SERVER}",
 		"auth": {
 			"method": "user_password",
 			"secret": {
@@ -94,8 +94,8 @@ else
     cat > ${EVENT_ROUTER_CONFIG} << __OPENFAAS_PROCESSOR__
 [{
 		"type": "stream",
-		"provider": "vmware_vcenter",
-		"address": "https://${ESCAPED_VCENTER_SERVER}/sdk",
+		"provider": "vmware_clouddirector",
+		"address": "https://${ESCAPED_VCENTER_SERVER}",
 		"auth": {
 			"method": "user_password",
 			"secret": {
