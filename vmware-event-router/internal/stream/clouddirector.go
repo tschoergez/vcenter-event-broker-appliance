@@ -54,7 +54,11 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 	var cloudDirector cloudDirectorStream
 	logger := log.New(os.Stdout, color.Magenta("[VMware Cloud Director] "), log.LstdFlags)
 	cloudDirector.Logger = logger
-	cloudDirector.cloudDirectorURL = cfg.Address
+	u, err := url.ParseRequestURI(cfg.Address)
+	if err != nil {
+		return nil, errors.Wrap(err, "Error parsing configured address: ")
+	}
+	cloudDirector.cloudDirectorURL = u.Scheme + "://" + u.Host
 	cloudDirector.pageSize = 10
 	cloudDirector.interval = 5
 	cloudDirector.timestampFormat = "2006-01-02T15:04:05.000Z0700"
@@ -83,13 +87,15 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 	cloudDirector.Logger.Println("Authenticating to Cloud Director", cloudDirector.cloudDirectorURL)
 	authResponse, err := http.DefaultClient.Do(authRequest)
 	if err != nil {
-		errors.Wrap(err, "Error authenticating ")
+		return nil, errors.Wrap(err, "Error authenticating ")
 	}
 	if authResponse.StatusCode != http.StatusOK {
-		errors.Errorf("Error authenticating: %s", authResponse.Status)
+		return nil, errors.Errorf("Error authenticating: %s", authResponse.Status)
 	}
-	cloudDirector.Logger.Println("Authentication Response: " + authResponse.Status)
 	authToken := authResponse.Header.Get("X-VMWARE-VCLOUD-ACCESS-TOKEN")
+	if authToken == "" {
+		return nil, errors.New("Response from " + cloudDirector.cloudDirectorURL + " does not contain a X-VMWARE-VCLOUD-ACCESS-TOKEN header")
+	}
 	cloudDirector.bearer = "Bearer " + authToken
 	cloudDirector.Logger.Println("Authentication to Cloud Director " + cloudDirector.cloudDirectorURL + " successful")
 
