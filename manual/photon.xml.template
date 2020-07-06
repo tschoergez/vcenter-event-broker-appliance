@@ -66,20 +66,20 @@
         </Property>
      <Category>vSphere</Category>
         <Property ovf:key="guestinfo.vcenter_server" ovf:type="string" ovf:userConfigurable="true" ovf:value="">
-            <Label>vCenter Server</Label>
-            <Description>IP Address or Hostname of vCenter Server</Description>
+            <Label>Cloud Director Server</Label>
+            <Description>IP Address or Hostname of Cloud Director Server</Description>
         </Property>
         <Property ovf:key="guestinfo.vcenter_username" ovf:type="string" ovf:userConfigurable="true" ovf:value="">
             <Label>vCenter Username</Label>
-            <Description>Username to login to vCenter Server</Description>
+            <Description>Username to login to Cloud Director Server (username#org)</Description>
         </Property>
         <Property ovf:key="guestinfo.vcenter_password" ovf:password="true" ovf:type="string" ovf:userConfigurable="true" ovf:value="">
             <Label>vCenter Password</Label>
-            <Description>Password to login to vCenter Server</Description>
+            <Description>Password to login to Cloud Director Server</Description>
         </Property>
         <Property ovf:key="guestinfo.vcenter_disable_tls_verification" ovf:type="boolean" ovf:userConfigurable="true" ovf:value="false">
-            <Label>Disable vCenter Server TLS Verification</Label>
-            <Description>Disable TLS Verification for vCenter Server (required for self-sign certificate)</Description>
+            <Label>Disable Cloud Director Server TLS Verification</Label>
+            <Description>Disable TLS Verification for Cloud Director Server (required for self-sign certificate)</Description>
         </Property>
       <Category>Event Processor Configuration</Category>
         <Property ovf:qualifiers="ValueMap{&quot;OpenFaaS&quot;, &quot;AWS EventBridge&quot;}" ovf:userConfigurable="true" ovf:value="OpenFaaS" ovf:type="string" ovf:key="guestinfo.event_processor_type">
