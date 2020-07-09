@@ -102,7 +102,7 @@
     "vmware-event-router": {
         "version": "v0.4.1",
         "containers": [{
-            "name": "vmware/veba-event-router",
+            "name": "tschoergez/veba-event-router",
             "version": "v0.4.1"
         }]
     }

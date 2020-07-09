@@ -5,7 +5,7 @@ VERSION := $(shell /bin/cat ../VERSION)
 $(if $(value COMMIT),,$(error COMMIT must be set (.git project?)))
 $(if $(value VERSION),,$(error VERSION must be set))
 
-IMAGE_REPO=vmware
+IMAGE_REPO=tschoergez
 IMAGE_NAME=$(IMAGE_REPO)/veba-event-router
 DIST_FOLDER=dist
 BINARY=vmware-event-router

@@ -1,6 +1,6 @@
     <ProductSection ovf:required="true">
     <Info>Information about the installed software</Info>
-      <Product>vCenter Event Broker Appliance</Product>
+      <Product>VMware Event Broker Appliance for Cloud Director</Product>
       <Vendor>VMware</Vendor>
       <Version>{{VERSION}}</Version>
       <ProductUrl>https://github.com/vmware-samples/vcenter-event-broker-appliance</ProductUrl>
@@ -70,11 +70,11 @@
             <Description>IP Address or Hostname of Cloud Director Server</Description>
         </Property>
         <Property ovf:key="guestinfo.vcenter_username" ovf:type="string" ovf:userConfigurable="true" ovf:value="">
-            <Label>vCenter Username</Label>
-            <Description>Username to login to Cloud Director Server (username#org)</Description>
+            <Label>Cloud Director Username</Label>
+            <Description>Username to login to Cloud Director Server (username@org)</Description>
         </Property>
         <Property ovf:key="guestinfo.vcenter_password" ovf:password="true" ovf:type="string" ovf:userConfigurable="true" ovf:value="">
-            <Label>vCenter Password</Label>
+            <Label>Cloud Director Password</Label>
             <Description>Password to login to Cloud Director Server</Description>
         </Property>
         <Property ovf:key="guestinfo.vcenter_disable_tls_verification" ovf:type="boolean" ovf:userConfigurable="true" ovf:value="false">
