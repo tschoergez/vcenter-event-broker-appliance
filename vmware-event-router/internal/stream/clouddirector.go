@@ -82,6 +82,9 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 
 	// Authenticating to Cloud Director
 	authRequest, err := http.NewRequest("POST", cloudDirector.cloudDirectorURL+"/api/sessions", nil)
+	if err != nil {
+		return nil, err
+	}
 	authRequest.Header.Set("Accept", "application/*+xml;version=33.0")
 	authRequest.SetBasicAuth(username, password)
 	cloudDirector.Logger.Println("Authenticating to Cloud Director", cloudDirector.cloudDirectorURL)
@@ -105,14 +108,12 @@ func NewCloudDirectorStream(ctx context.Context, cfg connection.Config, opts ...
 // Stream polls the CloudDirector auditTrail API endlessly
 func (cloudDirector *cloudDirectorStream) Stream(ctx context.Context, p processor.Processor) error {
 	loc, _ := time.LoadLocation("UTC")
-	end := time.Time{}
-	//start := end.Add(time.Second * time.Duration(-cloudDirector.interval))
 	start, err := cloudDirector.getNewestEventTime()
 	if err != nil {
 		start = time.Now().In(loc)
 	}
 	for {
-		end = time.Now().In(loc)
+		end := time.Now().In(loc)
 		page := 1
 		pageCount, lastEventTime, err := cloudDirector.getAuditTrail(start, end, page, p)
 		if err != nil {
@@ -135,6 +136,9 @@ func (cloudDirector *cloudDirectorStream) Stream(ctx context.Context, p processo
 // gets the newest event's timestamp
 func (cloudDirector *cloudDirectorStream) getNewestEventTime() (time.Time, error) {
 	request, err := http.NewRequest("GET", cloudDirector.cloudDirectorURL+"/cloudapi/1.0.0/auditTrail", nil)
+	if err != nil {
+		return time.Time{}, errors.Wrap(err, "Error creating GET request: ")
+	}
 	request.Header.Set("Accept", "application/json;version=33.0")
 	request.Header.Set("Authorization", cloudDirector.bearer)
 	q := url.Values{}
@@ -145,7 +149,7 @@ func (cloudDirector *cloudDirectorStream) getNewestEventTime() (time.Time, error
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		errors.Wrap(err, "Error getting auditTrail")
+		return time.Time{}, errors.Wrap(err, "Error getting auditTrail")
 	}
 	cloudDirector.Logger.Println("Response status: ", response.Status)
 	statusOK := response.StatusCode >= 200 && response.StatusCode < 300
@@ -157,11 +161,11 @@ func (cloudDirector *cloudDirectorStream) getNewestEventTime() (time.Time, error
 	var auditTrail auditTrail
 	b, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		errors.Wrap(err, "Error reading response body")
+		return time.Time{}, errors.Wrap(err, "Error reading response body")
 	}
 	err = json.Unmarshal(b, &auditTrail)
 	if err != nil {
-		errors.Wrap(err, "Error parsing response body")
+		return time.Time{}, errors.Wrap(err, "Error parsing response body")
 	}
 	response.Body.Close()
 
@@ -204,6 +208,9 @@ func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end tim
 	cloudDirector.Logger.Printf("Get Cloud Director events with filter %v ", timeFilter)
 
 	request, err := http.NewRequest("GET", cloudDirector.cloudDirectorURL+"/cloudapi/1.0.0/auditTrail", nil)
+	if err != nil {
+		return 0, start, errors.Wrap(err, "Error creating GET request: ")
+	}
 	request.Header.Set("Accept", "application/json;version=33.0")
 	request.Header.Set("Authorization", cloudDirector.bearer)
 	q := url.Values{}
@@ -216,7 +223,7 @@ func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end tim
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		errors.Wrap(err, "Error getting auditTrail")
+		return 0, start, errors.Wrap(err, "Error getting auditTrail")
 	}
 	cloudDirector.Logger.Println("Response status: ", response.Status)
 	statusOK := response.StatusCode >= 200 && response.StatusCode < 300
@@ -228,11 +235,13 @@ func (cloudDirector *cloudDirectorStream) getAuditTrail(start time.Time, end tim
 	var auditTrail auditTrail
 	b, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		errors.Wrap(err, "Error reading response body")
+		err = errors.Wrap(err, "Error reading response body")
+		return 0, start, err
 	}
 	err = json.Unmarshal(b, &auditTrail)
 	if err != nil {
-		errors.Wrap(err, "Error parsing response body")
+		err = errors.Wrap(err, "Error parsing response body")
+		return 0, start, err
 	}
 	response.Body.Close()
 
