@@ -103,7 +103,7 @@
         "version": "v0.4.1",
         "containers": [{
             "name": "tschoergez/veba-event-router",
-            "version": "v0.4.1"
+            "version": "latest"
         }]
     }
 }
