@@ -30,7 +30,7 @@ spec:
         app: vmware-event-router
     spec:
       containers:
-      - image: vmware/veba-event-router:${EVENT_ROUTER_VERSION}
+      - image: tschoergez/veba-event-router:${EVENT_ROUTER_VERSION}
         imagePullPolicy: IfNotPresent
         args: ["-config", "/etc/vmware-event-router/event-router-config.json", "-verbose"]
         name: vmware-event-router

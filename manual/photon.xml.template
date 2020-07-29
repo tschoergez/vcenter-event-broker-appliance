@@ -64,7 +64,7 @@
             <Label>Enable SSH</Label>
             <Description>Automatically start SSH daemon</Description>
         </Property>
-     <Category>vSphere</Category>
+     <Category>VMware Cloud Director</Category>
         <Property ovf:key="guestinfo.vcenter_server" ovf:type="string" ovf:userConfigurable="true" ovf:value="">
             <Label>Cloud Director Server</Label>
             <Description>IP Address or Hostname of Cloud Director Server</Description>
