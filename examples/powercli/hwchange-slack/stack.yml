@@ -1,6 +1,6 @@
 provider:
   name: openfaas
-  gateway: https://veba.primp-industries.com
+  gateway: http://35.239.64.218:8080
 functions:
   powercli-reconfigure:
     lang: powercli
@@ -13,4 +13,4 @@ functions:
     secrets:
       - vc-slack-config
     annotations:
-      topic: VmReconfiguredEvent
+      topic: "com/vmware/vcloud/event/task/complete"

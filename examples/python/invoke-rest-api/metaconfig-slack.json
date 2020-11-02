@@ -1,5 +1,5 @@
 {
-    "url": "https://<incoming-web-hook>.slack.com/services/T024....FIe",
+    "url": "https://hooks.slack.com/services/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",
     "headers": {
         "content-type": "application/json; charset=UTF-8"
     },
@@ -23,8 +23,8 @@
                 },
                 "accessory": {
                     "type": "image",
-                    "image_url": "https://clipartart.com/images/vmware-esxi-clipart-2.jpg",
-                    "alt_text": "vCenter"
+                    "image_url": "https://vcoportal.s3-eu-west-1.amazonaws.com/zoo-logo.png",
+                    "alt_text": "VCD"
                 },
                 "fields": [
                     {
@@ -54,7 +54,7 @@
         },
         {
             "push": "blocks/[1]/text/text",
-            "pull": "data/FullFormattedMessage"
+            "pull": "data/description"
         },
         {
             "push": "blocks/[1]/accessory/alt_text",
@@ -62,15 +62,15 @@
         },
         {
             "push": "blocks/[1]/fields/[0]/text",
-            "pull": "data/Datacenter/Datacenter/Value"
+            "pull": "data/eventEntity/name"
         },
         {
             "push": "blocks/[1]/fields/[1]/text",
-            "pull": "data/Host/Host/Value"
+            "pull": "data/eventStatus"
         },
         {
             "push": "blocks/[1]/fields/[2]/text",
-            "pull": "data/Vm/Vm/Value"
+            "pull": "data/eventEntity/id"
         }
     ]
 }

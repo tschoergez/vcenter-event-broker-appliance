@@ -1,4 +1,4 @@
 {
-    "SLACK_URL"   : "https://my.slack.com/services/new/incoming-webhook/",
-    "SLACK_CHANNEL" : "vcevent"
+    "SLACK_URL"   : "https://hooks.slack.com/services/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",
+    "SLACK_CHANNEL" : "vcd-o11n-trail"
 }

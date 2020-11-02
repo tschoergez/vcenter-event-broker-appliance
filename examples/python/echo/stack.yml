@@ -1,7 +1,7 @@
 version: 1.0
 provider:
   name: openfaas
-  gateway: http://veba.primp-industries.com
+  gateway: http://35.239.64.218:8080
 functions:
   veba-echo:
     lang: python
@@ -11,4 +11,4 @@ functions:
       write_debug: true
       read_debug: true
     annotations:
-      topic: "VmPoweredOnEvent,VmPoweredOffEvent"
+      topic: "com/vmware/vcloud/event/session/login"
